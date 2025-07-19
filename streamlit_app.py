@@ -6,6 +6,21 @@ st.set_page_config(page_title="🔍 Tìm kiếm SDT / Email", layout="wide")
 st.title("📁 Tìm kiếm dữ liệu từ 1 file Excel nhiều sheet")
 
 uploaded_file = st.file_uploader("📤 Tải lên 1 file Excel duy nhất", type=["xlsx", "xls"])
+# Nếu chưa upload file, thì tự động lấy file mẫu từ GitHub
+if not uploaded_file:
+    st.info("📡 Chưa có file upload – đang lấy file mẫu từ GitHub...")
+
+    default_url = "https://raw.githubusercontent.com/David-FPI/Find_DATA/main/Book1.xlsx"
+    try:
+        import requests
+        from io import BytesIO
+        response = requests.get(default_url)
+        response.raise_for_status()
+        uploaded_file = BytesIO(response.content)
+        st.success("✅ Đã tải thành công file mẫu từ GitHub.")
+    except Exception as e:
+        st.error(f"❌ Không thể tải file mẫu từ GitHub: {e}")
+        uploaded_file = None
 
 # Cho phép nhập số dòng cần bỏ qua
 skiprows_n = st.number_input("⏭ Số dòng đầu tiên muốn bỏ qua (skiprows)", min_value=0, max_value=20, value=0, step=1)
