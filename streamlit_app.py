@@ -52,7 +52,17 @@ if uploaded_file:
     # Hiển thị sheet đã đọc thành công
     if loaded_sheets:
         st.markdown("### ✅ Sheet đã đọc thành công:")
-        st.dataframe(pd.DataFrame(loaded_sheets, columns=["Tên sheet"]), use_container_width=True)
+        selected_sheets = st.multiselect(
+            "📑 Chọn sheet muốn sử dụng:",
+            options=loaded_sheets,
+            default=loaded_sheets  # mặc định chọn tất cả
+        )
+    
+        st.dataframe(pd.DataFrame(selected_sheets, columns=["Sheet được chọn"]), use_container_width=True)
+    
+        # Lọc lại data chỉ lấy sheet user chọn
+        all_data = [df for df in all_data if df["Tên sheet"].iloc[0] in selected_sheets]
+
 
     # Xử lý tìm kiếm nếu đọc xong dữ liệu
     if all_data:
