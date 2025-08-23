@@ -61,7 +61,9 @@ if uploaded_file:
         st.dataframe(pd.DataFrame(selected_sheets, columns=["Sheet được chọn"]), use_container_width=True)
     
         # Lọc lại data chỉ lấy sheet user chọn
-        all_data = [df for df in all_data if df["Tên sheet"].iloc[0] in selected_sheets]
+        # all_data = [df for df in all_data if df["Tên sheet"].iloc[0] in selected_sheets]
+        all_data = [df for df in all_data if df["Tên sheet"].unique()[0] in selected_sheets]
+
 
 
     # Xử lý tìm kiếm nếu đọc xong dữ liệu
