@@ -1,100 +1,103 @@
 import streamlit as st
 import pandas as pd
-from io import BytesIO
+import re
 
-st.set_page_config(page_title="🔍 Tìm kiếm SDT / Email", layout="wide")
-st.title("📁 Tìm kiếm dữ liệu từ 1 file Excel nhiều sheet")
+# -----------------
+# Hàm chuẩn hóa
+# -----------------
+def normalize_phone(phone: str) -> str:
+    if pd.isna(phone):
+        return None
+    phone = str(phone).strip()
+    phone = re.sub(r"[^0-9]", "", phone)  # chỉ giữ số
 
-uploaded_file = st.file_uploader("📤 Tải lên 1 file Excel duy nhất", type=["xlsx", "xls"])
+    if phone.startswith("84") and len(phone) >= 9:
+        phone = "0" + phone[2:]
+    return phone
 
-# Nếu chưa upload file, thì tự động lấy file mẫu từ GitHub
-if not uploaded_file:
-    st.info("📡 Chưa có file upload – đang lấy file mẫu từ GitHub...")
+def normalize_email(email: str) -> str:
+    if pd.isna(email):
+        return None
+    return str(email).strip().lower()
 
-    default_url = "https://raw.githubusercontent.com/David-FPI/Find_DATA/main/Book1.xlsx"
-    try:
-        import requests
-        response = requests.get(default_url)
-        response.raise_for_status()
-        uploaded_file = BytesIO(response.content)
-        st.success("✅ Đã tải thành công file mẫu từ GitHub.")
-    except Exception as e:
-        st.error(f"❌ Không thể tải file mẫu từ GitHub: {e}")
-        uploaded_file = None
+# -----------------
+# Streamlit app
+# -----------------
+st.set_page_config(page_title="🔍 Find Tool", layout="wide")
+st.title("📁 Find Tool trong Excel")
 
-skiprows_n = st.number_input("⏭ Số dòng đầu tiên muốn bỏ qua (skiprows)", min_value=0, max_value=20, value=0, step=1)
+# Upload file
+file = st.file_uploader("📤 Upload file Excel", type=["xlsx"])
 
-if uploaded_file:
-    try:
-        xls = pd.ExcelFile(uploaded_file, engine="openpyxl")
-        sheet_names = xls.sheet_names
+if file:
+    xls = pd.ExcelFile(file)
 
-        # ✅ Cho phép chọn sheet
-        selected_sheets = st.multiselect(
-            "🧾 Chọn sheet để tìm kiếm:",
-            options=sheet_names,
-            default=sheet_names  # mặc định chọn hết
-        )
+    # chọn skip row
+    skip = st.number_input("⏭ Skip rows (số dòng bỏ qua)", 0, 20, 0)
 
-        all_data = []
-        for sheet_name in selected_sheets:
-            try:
-                df = pd.read_excel(xls, sheet_name=sheet_name, skiprows=skiprows_n)
-                df["Tên sheet"] = sheet_name
-                all_data.append(df)
-            except Exception as sheet_error:
-                st.warning(f"⚠️ Bỏ qua sheet lỗi: `{sheet_name}` – {sheet_error}")
+    # chọn sheet
+    sheets = st.multiselect("🧾 Chọn sheet để tìm", xls.sheet_names, default=xls.sheet_names[:1])
 
-        if all_data:
-            full_df = pd.concat(all_data, ignore_index=True)
-            st.success(f"✅ Đã đọc {len(full_df)} dòng từ {len(selected_sheets)} sheet đã chọn.")
+    if sheets:
+        # đọc thử 1 sheet để lấy cột (dùng sheet đầu tiên trong danh sách)
+        sample_df = pd.read_excel(file, sheet_name=sheets[0], skiprows=skip, dtype=str)
 
-            # ✅ Chọn cột để tìm kiếm
-            st.subheader("🧩 Chọn cột chứa giá trị cần tìm (SĐT / Email / Mã KH...)")
-            possible_cols = full_df.columns.tolist()
-            selected_col = st.selectbox("🎯 Chọn cột cần tra cứu:", options=possible_cols)
+        # show sample data
+        st.subheader("👀 Xem trước 5 dòng đầu của sheet")
+        st.dataframe(sample_df.head(), use_container_width=True)
 
-            st.subheader("🔎 Nhập danh sách SĐT hoặc Email để tìm (mỗi dòng 1 giá trị)")
-            input_text = st.text_area("📥 Nhập dữ liệu:", placeholder="vd:\n0987654321\nuser@email.com")
+        # show data types
+        st.write("🔍 Kiểu dữ liệu các cột:")
+        st.json({col: str(dtype) for col, dtype in sample_df.dtypes.items()})
 
-            if st.button("🚀 Tìm kiếm"):
-                if input_text.strip() == "":
-                    st.warning("⚠️ Bạn chưa nhập gì cả!")
-                else:
-                    search_terms = [line.strip().lower() for line in input_text.splitlines() if line.strip()]
-                    search_set = set(search_terms)
+        # chọn cột
+        col = st.selectbox("🎯 Chọn cột để dò", sample_df.columns)
 
-                    try:
-                        target_col_series = full_df[selected_col].astype(str).str.strip().str.lower()
-                    except Exception as e:
-                        st.error(f"❌ Không thể lấy cột `{selected_col}`: {e}")
-                        st.stop()
+        # option normalize
+        norm_func = None
+        if st.checkbox("✨ Chuẩn hóa dữ liệu (số ĐT / email)"):
+            if "phone" in col.lower() or "sđt" in col.lower() or "điện thoại" in col.lower():
+                norm_func = normalize_phone
+                st.info("📱 Chuẩn hóa số điện thoại được bật")
+            elif "email" in col.lower():
+                norm_func = normalize_email
+                st.info("📧 Chuẩn hóa email được bật")
 
-                    value_found = {}
-                    for val in search_set:
-                        matches = target_col_series[target_col_series == val]
-                        if not matches.empty:
-                            value_found[val] = matches.index.tolist()
+        # nhập nhiều giá trị
+        input_text = st.text_area("🔎 Nhập giá trị muốn tìm (mỗi dòng 1 SĐT/Email/Mã KH)")
 
-                    result_rows = []
-                    for val in search_terms:
-                        if val in value_found:
-                            last_row = full_df.loc[value_found[val][-1]].copy()
-                            last_row["Giá trị tìm"] = val
-                            result_rows.append(last_row)
-                        else:
-                            empty_row = pd.Series([None]*len(full_df.columns), index=full_df.columns)
-                            empty_row["Giá trị tìm"] = val
-                            result_rows.append(empty_row)
+        # nút bấm tìm
+        if st.button("🚀 Tìm kiếm"):
+            if not input_text.strip():
+                st.warning("⚠️ Bạn chưa nhập giá trị tìm kiếm!")
+            else:
+                search_terms = [x.strip() for x in input_text.splitlines() if x.strip()]
 
-                    result_df = pd.DataFrame(result_rows)
-                    result_df = result_df[["Giá trị tìm"] + [col for col in result_df.columns if col != "Giá trị tìm"]]
+                if norm_func:
+                    search_terms = [norm_func(x) for x in search_terms]
 
-                    st.subheader(f"📊 Tìm thấy {result_df[result_df.notna().any(axis=1)].shape[0]} / {len(search_terms)} giá trị")
-                    st.dataframe(result_df, use_container_width=True)
+                all_results = []
 
-                    csv = result_df.to_csv(index=False)
+                for sheet in sheets:
+                    df = pd.read_excel(file, sheet_name=sheet, skiprows=skip, dtype=str)
+                    df_search = df.copy()
+
+                    if norm_func:
+                        df_search[col] = df_search[col].map(norm_func)
+
+                    result = df[df_search[col].isin(search_terms)].copy()
+                    if not result.empty:
+                        result["Sheet Name"] = sheet
+                        all_results.append(result)
+
+                if all_results:
+                    final_result = pd.concat(all_results, ignore_index=True)
+                    st.success(f"✅ Tìm thấy {len(final_result)} dòng phù hợp")
+                    st.dataframe(final_result, use_container_width=True)
+
+                    # cho download kết quả
+                    csv = final_result.to_csv(index=False)
                     st.download_button("📥 Tải kết quả CSV", csv, file_name="ket_qua_tim.csv", mime="text/csv")
 
-    except Exception as file_error:
-        st.error(f"❌ Lỗi đọc file: {file_error}")
+                else:
+                    st.warning("❌ Không tìm thấy giá trị nào trong file")
